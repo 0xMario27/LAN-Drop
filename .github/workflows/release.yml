@@ -1,0 +1,64 @@
+name: Build & Release Extension
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'extension/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'tsconfig.json'
+      - 'Makefile'
+      - '.github/workflows/release.yml'
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run typecheck
+
+      - run: npm test
+
+      - name: Build extension
+        run: |
+          npm run build
+          rm -f extension/protocol.js extension/protocol.js.map \
+            extension/crypto-primitives.js extension/crypto-primitives.js.map \
+            extension/identity.js extension/identity.js.map \
+            extension/noise.js extension/noise.js.map \
+            extension/secure-channel.js extension/secure-channel.js.map
+          npx esbuild src/offscreen.ts --bundle --format=esm --outfile=extension/offscreen.js --sourcemap
+
+      - name: Package zip
+        run: cd extension && zip -qr ../lan-drop-extension.zip . -x '*.map'
+
+      - name: Read version
+        id: version
+        run: |
+          VERSION=$(node -p "require('./extension/manifest.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: LAN Drop v${{ steps.version.outputs.version }}
+          generate_release_notes: true
+          files: lan-drop-extension.zip
+          prerelease: ${{ github.ref_type != 'tag' }}
