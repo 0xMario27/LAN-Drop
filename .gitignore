@@ -5,3 +5,6 @@ node_modules/
 extension/*.js
 extension/*.js.map
 lan-drop-extension.zip
+
+# 本地 AI Agent 工具目录
+.opencode/
