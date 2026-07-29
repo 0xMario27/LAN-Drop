@@ -1,0 +1,120 @@
+// 局域网信令中转：只转发 SDP/ICE，不碰聊天内容，不落盘，不记日志。
+// 靠 Node 原生 type stripping 直接运行 —— 没有构建步骤。
+
+import { WebSocketServer, type WebSocket } from 'ws';
+import type { IncomingMessage } from 'node:http';
+import { createHash } from 'node:crypto';
+import type { ClientFrame, PeerInfo, ServerFrame } from '../src/protocol.ts';
+
+const MAX_PAYLOAD = 1 << 16; // 信令帧最大 64 KiB，媒体不走这里
+const HEX64 = /^[0-9a-f]{64}$/;
+
+interface Member {
+  ws: WebSocket;
+  name: string;
+}
+
+/** 一条连接的会话状态；join 之前 id 为 null。 */
+interface Session {
+  room: string | null;
+  id: string | null;
+}
+
+/** 同一网段的人默认进同一个房间 —— 这就是"自动发现局域网用户"。 */
+export function subnetKey(address = ''): string {
+  const ip = address.replace(/^::ffff:/, '');
+  const parts = ip.includes('.') ? ip.split('.').slice(0, 3) : ip.split(':').slice(0, 4);
+  return createHash('sha256').update(`subnet:${parts.join('.')}`).digest('hex');
+}
+
+function send(ws: WebSocket, frame: ServerFrame): void {
+  if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(frame));
+}
+
+export function createSignalServer({ port = 8787 } = {}): WebSocketServer {
+  // ponytail: 房间不限人数（按需求）。代价在客户端 —— 全网状连接数是 O(n²)，
+  // 几十人以内没问题，真要上百人得把客户端换成 SFU 或星型转发。
+  const rooms = new Map<string, Map<string, Member>>();
+
+  const wss = new WebSocketServer({ port, maxPayload: MAX_PAYLOAD });
+
+  wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
+    const session: Session = { room: null, id: null };
+
+    ws.on('message', (raw: Buffer) => {
+      let frame: ClientFrame;
+      try {
+        frame = JSON.parse(raw.toString()) as ClientFrame;
+      } catch {
+        return; // 非 JSON 直接丢弃
+      }
+
+      if (frame.t === 'join') join(ws, session, frame, req);
+      else if (frame.t === 'signal') relay(session, frame);
+    });
+
+    ws.on('close', () => leave(session));
+    ws.on('error', () => leave(session));
+  });
+
+  function join(
+    ws: WebSocket,
+    session: Session,
+    frame: Extract<ClientFrame, { t: 'join' }>,
+    req: IncomingMessage
+  ): void {
+    if (session.id) return send(ws, { t: 'error', message: '重复加入' });
+
+    const id = String(frame.id ?? '').slice(0, 64);
+    if (!id) return send(ws, { t: 'error', message: '缺少 id' });
+
+    // 群名由客户端 SHA-256 后传来，服务器只见密文；不合法就退回本网段房间
+    const roomKey = HEX64.test(frame.room ?? '') ? (frame.room as string) : subnetKey(req.socket.remoteAddress);
+
+    let room = rooms.get(roomKey);
+    if (!room) {
+      room = new Map<string, Member>();
+      rooms.set(roomKey, room);
+    }
+    if (room.has(id)) return send(ws, { t: 'error', message: 'id 冲突' });
+
+    const name = String(frame.name ?? '').slice(0, 32) || '匿名';
+    const peers: PeerInfo[] = [...room].map(([pid, m]) => ({ id: pid, name: m.name }));
+
+    room.set(id, { ws, name });
+    session.room = roomKey;
+    session.id = id;
+
+    send(ws, { t: 'joined', room: roomKey, peers });
+    for (const [pid, m] of room) {
+      if (pid !== id) send(m.ws, { t: 'peer-join', id, name });
+    }
+  }
+
+  function relay(session: Session, frame: Extract<ClientFrame, { t: 'signal' }>): void {
+    if (!session.id || !session.room) return;
+    const target = rooms.get(session.room)?.get(String(frame.to ?? ''));
+    if (!target) return; // 只能转给同房间的人
+    send(target.ws, { t: 'signal', from: session.id, data: frame.data });
+  }
+
+  function leave(session: Session): void {
+    if (!session.id || !session.room) return;
+    const room = rooms.get(session.room);
+    if (!room) return;
+
+    room.delete(session.id);
+    for (const m of room.values()) send(m.ws, { t: 'peer-leave', id: session.id });
+    if (room.size === 0) rooms.delete(session.room);
+    session.id = null;
+  }
+
+  return wss;
+}
+
+if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
+  const port = Number(process.env['PORT'] ?? 8787);
+  createSignalServer({ port }).on('listening', () => {
+    console.log(`LAN Drop 信令服务已启动: ws://<本机局域网IP>:${port}`);
+  });
+}

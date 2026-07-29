@@ -1,0 +1,15 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    // 服务端跑在 Node 上（靠原生 type stripping 直接执行 .ts，不产出 JS），
+    // 但仍需要 DOM lib —— protocol.ts 里的 SDP/ICE 类型来自那里。
+    "types": ["node"],
+    "lib": ["ES2022", "DOM"],
+    "noEmit": true,
+    // Node 直接执行 .ts，所以源码里的 import 也写 .ts
+    "allowImportingTsExtensions": true,
+    "rootDir": ".."
+  },
+  // 测试都跑在 Node 上，所以 src/ 下的测试也归这套配置检查
+  "include": ["**/*.ts", "../src/**/*.test.ts"]
+}
