@@ -4,7 +4,7 @@
 import { candidates, discover, portFrom, subnetsToScan } from './discover.js';
 import { generateIdentity, serializeIdentity, deserializeIdentity, derivePeerId, fingerprint, type Identity } from './identity.js';
 import { initiatorHandshake, responderHandshake, type HandshakeResult } from './noise.js';
-import { SecureChannel, packFrame, unpackFrame, CTRL_PREFIX } from './secure-channel.js';
+import { SecureChannel, packFrame, unpackFrame, CTRL_PREFIX, DATA_PREFIX } from './secure-channel.js';
 import { fromBase64, toBase64 } from './crypto-primitives.js';
 import type {
   AppState,
@@ -67,6 +67,7 @@ interface Peer {
   queue: Promise<void>;
   incoming: Incoming | null;
   trust: TrustState | undefined;
+  initiator: boolean;
 }
 
 let selfId = '--------'; // 握手前占位，loadIdentity 后替换为 peerId
@@ -148,8 +149,9 @@ async function checkAndSaveTrust(peerId: string, pubkey: Uint8Array): Promise<Tr
   }
 
   if (stored.pubkey !== pubkeyB64) {
-    // 指纹变更：密钥换了，警告但不自动更新
-    return { level: stored.level, fingerprint: fp, changed: true };
+    // 指纹变更：密钥换了，更新存储为新公钥（TOFU 重新信任），但标记 changed 让 UI 本次警告
+    await toSw({ target: 'sw', t: 'set-trusted-peer', peerId, pubkey: pubkeyB64, level: 'tofu' });
+    return { level: 'tofu', fingerprint: fp, changed: true };
   }
 
   return { level: stored.level, fingerprint: fp, changed: false };
@@ -441,9 +443,9 @@ async function createPeer(id: string, name: string, pubkey: string, initiator: b
     queue: Promise.resolve(),
     incoming: null,
     trust: undefined,
+    initiator,
   };
   state.peers.set(id, peer);
-  (peer as Peer & { _initiator?: boolean })._initiator = initiator;
 
   pc.onicecandidate = (e) => {
     if (e.candidate) send({ t: 'signal', to: id, data: { ice: e.candidate.toJSON() } });
@@ -502,10 +504,13 @@ function securePost(peer: Peer, frame: ChannelFrame): void {
   peer.ch.send(packFrame(nonce, ciphertext));
 }
 
-/** 加密发送文件分片 */
+/** 加密发送文件分片（前缀 0x02 区分控制帧） */
 function secureSendChunk(peer: Peer, chunk: ArrayBuffer): void {
   if (!peer.ch || !peer.channel) return;
-  const { nonce, ciphertext } = peer.channel.encrypt(new Uint8Array(chunk));
+  const data = new Uint8Array(chunk.byteLength + 1);
+  data[0] = DATA_PREFIX;
+  data.set(new Uint8Array(chunk), 1);
+  const { nonce, ciphertext } = peer.channel.encrypt(data);
   peer.ch.send(packFrame(nonce, ciphertext));
 }
 
@@ -555,8 +560,8 @@ function wireChannel(peer: Peer, ch: RTCDataChannel): void {
         return;
       }
       onChannelFrame(peer, frame);
-    } else {
-      onFileChunk(peer, plaintext.buffer as ArrayBuffer);
+    } else if (plaintext[0] === DATA_PREFIX) {
+      onFileChunk(peer, plaintext.slice(1).buffer as ArrayBuffer);
     }
   };
 }
@@ -570,9 +575,9 @@ function handshakeRecv(peer: Peer): Promise<Uint8Array> {
   });
 }
 
-/** 握手 send：发原始字节 */
+/** 握手 send：发原始字节（slice 确保 buffer 精确匹配，不带多余字节） */
 function handshakeSend(peer: Peer, msg: Uint8Array): void {
-  peer.ch?.send(msg.buffer as ArrayBuffer);
+  peer.ch?.send(msg.slice().buffer as ArrayBuffer);
 }
 
 async function runHandshake(peer: Peer): Promise<void> {
@@ -609,7 +614,7 @@ async function runHandshake(peer: Peer): Promise<void> {
 
     // 判断是否为 initiator：initiator 在 createPeer 里创建了 DataChannel
     // 用 peer._initiator 标记（在 createPeer 里设置）
-    const isInitiator = (peer as Peer & { _initiator?: boolean })._initiator ?? false;
+    const isInitiator = peer.initiator;
 
     let result: HandshakeResult;
     const handshakePromise = isInitiator

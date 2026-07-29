@@ -43,8 +43,9 @@ export class SecureChannel {
   }
 }
 
-/** 控制帧前缀：区分 JSON 控制帧（0x01）与文件分片（裸字节） */
+/** 控制帧前缀：区分 JSON 控制帧（0x01）与文件分片（0x02） */
 export const CTRL_PREFIX = 0x01;
+export const DATA_PREFIX = 0x02;
 
 /** 拼接 nonce + ciphertext 为一个 ArrayBuffer 发送 */
 export function packFrame(nonce: Uint8Array, ciphertext: Uint8Array): ArrayBuffer {
