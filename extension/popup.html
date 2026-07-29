@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>LAN Drop</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <aside>
+      <header>
+        <span id="dot" class="dot"></span>
+        <strong id="me">…</strong>
+        <button id="toggle-settings" class="icon" title="设置">⚙</button>
+      </header>
+      <p class="muted small meta"><span id="status"></span> <span id="room"></span></p>
+
+      <section id="settings" hidden>
+        <label>
+          信令服务器（局域网 ws:// 或公网 wss://）
+          <span class="row">
+            <input id="url" type="text" placeholder="ws://192.168.1.10:8787" />
+            <button id="scan" title="扫描本机所在网段">🔍</button>
+          </span>
+        </label>
+        <p id="scan-status" class="muted small" hidden></p>
+
+        <label>昵称（留空则匿名） <input id="name" type="text" maxlength="32" placeholder="匿名-xxxx" /></label>
+        <label>群组码（留空 = 本网段公共群） <input id="group" type="text" maxlength="64" placeholder="例如 team-a" /></label>
+
+        <div class="row">
+          <button id="connect" class="primary">连接</button>
+          <button id="disconnect">断开</button>
+        </div>
+        <p class="muted small">群组码经本地 SHA-256 后才发给服务器，服务器只中转 SDP，聊天与文件全程 P2P。</p>
+
+        <details id="diag">
+          <summary class="muted small">诊断日志</summary>
+          <pre id="log" class="small"></pre>
+        </details>
+      </section>
+
+      <section id="peers-wrap">
+        <div class="section-title">在线成员 <span id="peer-count">0</span></div>
+        <ul id="peers"></ul>
+      </section>
+
+      <section id="transfers"></section>
+    </aside>
+
+    <main>
+      <p id="error" class="error" hidden></p>
+      <div id="messages"></div>
+
+      <footer>
+        <div class="row">
+          <label class="inline muted small">发送给 <select id="target"><option value="all">所有人</option></select></label>
+        </div>
+        <textarea id="text" rows="3" placeholder="输入消息，Enter 发送，Shift+Enter 换行"></textarea>
+        <div class="row end">
+          <button id="pick-file">📎 发送文件</button>
+          <button id="send" class="primary">发送</button>
+        </div>
+        <input id="file" type="file" hidden multiple />
+      </footer>
+    </main>
+
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>
