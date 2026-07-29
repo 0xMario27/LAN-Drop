@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { WebSocket } from 'ws';
 import type { ServerFrame } from '../src/protocol.ts';
-import { createSignalServer, subnetKey } from './signal.ts';
+import { createSignalServer } from './signal.ts';
 
 const nextFrame = (ws: WebSocket): Promise<ServerFrame> =>
   new Promise((resolve) => ws.once('message', (raw: Buffer) => resolve(JSON.parse(raw.toString()) as ServerFrame)));
@@ -77,7 +77,21 @@ test('房间没有人数上限', async (t) => {
   for (const ws of sockets) ws.close();
 });
 
-test('未指定房间时按 /24 网段归组', () => {
-  assert.equal(subnetKey('192.168.1.7'), subnetKey('::ffff:192.168.1.200'));
-  assert.notEqual(subnetKey('192.168.1.7'), subnetKey('192.168.2.7'));
+test('未指定房间时所有人进入同一大厅', async (t) => {
+  const { wss, port } = await listen();
+  t.after(() => wss.close());
+
+  const a = await client(port, { t: 'join', room: null, id: 'a', name: '甲', pubkey: '' });
+  const frameA = await nextFrame(a);
+  assert.equal(frameA.t, 'joined');
+  assert.deepEqual(frameA, { t: 'joined', room: 'lobby', peers: [] });
+
+  const b = await client(port, { t: 'join', room: null, id: 'b', name: '乙', pubkey: '' });
+  const [frameB, notifyA] = await Promise.all([nextFrame(b), nextFrame(a)]);
+  assert.equal(frameB.t, 'joined');
+  assert.deepEqual(frameB.peers, [{ id: 'a', name: '甲', pubkey: '' }]);
+  assert.deepEqual(notifyA, { t: 'peer-join', id: 'b', name: '乙', pubkey: '' });
+
+  a.close();
+  b.close();
 });

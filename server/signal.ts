@@ -3,11 +3,11 @@
 
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { IncomingMessage } from 'node:http';
-import { createHash } from 'node:crypto';
 import type { ClientFrame, PeerInfo, ServerFrame } from '../src/protocol.ts';
 
 const MAX_PAYLOAD = 1 << 16; // 信令帧最大 64 KiB，媒体不走这里
 const HEX64 = /^[0-9a-f]{64}$/;
+const LOBBY_ROOM = 'lobby';
 
 interface Member {
   ws: WebSocket;
@@ -32,13 +32,6 @@ function log(level: 'INFO' | 'WARN' | 'ERROR', msg: string): void {
 
 function clientIp(req: IncomingMessage): string {
   return (req.socket.remoteAddress ?? '').replace(/^::ffff:/, '');
-}
-
-/** 同一网段的人默认进同一个房间 —— 这就是"自动发现局域网用户"。 */
-export function subnetKey(address = ''): string {
-  const ip = address.replace(/^::ffff:/, '');
-  const parts = ip.includes('.') ? ip.split('.').slice(0, 3) : ip.split(':').slice(0, 4);
-  return createHash('sha256').update(`subnet:${parts.join('.')}`).digest('hex');
 }
 
 function send(ws: WebSocket, frame: ServerFrame): void {
@@ -88,8 +81,8 @@ export function createSignalServer({ port = 8787 } = {}): WebSocketServer {
     const id = String(frame.id ?? '').slice(0, 64);
     if (!id) return send(ws, { t: 'error', message: '缺少 id' }), log('WARN', `拒绝：缺少 id ip=${session.ip}`);
 
-    // 群名由客户端 SHA-256 后传来，服务器只见密文；不合法就退回本网段房间
-    const roomKey = HEX64.test(frame.room ?? '') ? (frame.room as string) : subnetKey(req.socket.remoteAddress);
+    // 有群组码就用群组码（SHA-256 后的 hex64），没有就进公共大厅
+    const roomKey = HEX64.test(frame.room ?? '') ? (frame.room as string) : LOBBY_ROOM;
 
     let room = rooms.get(roomKey);
     if (!room) {

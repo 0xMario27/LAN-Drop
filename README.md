@@ -38,7 +38,7 @@ Open `chrome://extensions` → enable **Developer mode** → **Load unpacked** �
 
 ### 3. Connect
 
-Click the ⚙ gear icon → either click **Auto-discover** or paste the `ws://` address from `make ip` → **Connect**. Everyone on the same subnet appears in the member list.
+Click the ⚙ gear icon → either click **Auto-discover** or paste the `ws://` address from `make ip` → **Connect**. Everyone on the same signaling server appears in the member list.
 
 ## Deployment
 
@@ -164,7 +164,7 @@ make build       # 或 make build-docker（本机不用装 Node）
 
 ### 3. 连接
 
-点 ⚙ 设置 → 点「自动发现」或手动填 `make ip` 打印的 `ws://` 地址 → 点「连接」。同网段的人会自动出现在成员列表里。
+点 ⚙ 设置 → 点「自动发现」或手动填 `make ip` 打印的 `ws://` 地址 → 点「连接」。同一信令服务的所有人会自动出现在成员列表里。
 
 ## 部署
 
