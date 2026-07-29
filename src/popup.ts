@@ -20,6 +20,7 @@ const els = {
   scanStatus: el<HTMLParagraphElement>('scan-status'),
   name: el<HTMLInputElement>('name'),
   group: el<HTMLInputElement>('group'),
+  theme: el<HTMLSelectElement>('theme'),
   connect: el<HTMLButtonElement>('connect'),
   disconnect: el<HTMLButtonElement>('disconnect'),
   error: el<HTMLParagraphElement>('error'),
@@ -395,12 +396,32 @@ function setVisible(visible: boolean): void {
   void toOffscreen({ t: 'set-visible', visible }).catch(() => {});
 }
 
+/* ---------- 主题 ---------- */
+
+function applyTheme(theme: string): void {
+  document.documentElement.dataset.theme = theme;
+}
+
+async function loadTheme(): Promise<void> {
+  const stored = await chrome.storage.local.get('theme');
+  const theme = (stored.theme as string) ?? 'auto';
+  els.theme.value = theme;
+  applyTheme(theme);
+}
+
+els.theme.onchange = () => {
+  const theme = els.theme.value;
+  applyTheme(theme);
+  void chrome.storage.local.set({ theme });
+};
+
 document.addEventListener('visibilitychange', () => setVisible(!document.hidden));
 window.addEventListener('pageshow', () => setVisible(true));
 window.addEventListener('pagehide', () => setVisible(false));
 
 void (async () => {
   try {
+    await loadTheme();
     await chrome.runtime.sendMessage({ target: 'sw', t: 'ensure' });
     setVisible(true);
     renderState(await toOffscreen<AppState>({ t: 'get-state' }));

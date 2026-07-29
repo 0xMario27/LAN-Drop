@@ -20,22 +20,41 @@
   --t: 150ms ease;
 }
 
+/* 手动深色 */
+:root[data-theme="dark"] {
+  --bg: #1c1c24;
+  --surface: #24242e;
+  --card: #2a2a36;
+  --text: #dcdcde;
+  --muted: #8b8b96;
+  --primary: #4d8ef0;
+  --primary-soft: #1e2a44;
+  --accent: #e8a317;
+  --accent-soft: #3d3210;
+  --border: #38384a;
+  --bubble-in: #2e2e3a;
+  --ok: #2db84d;
+  --warn: #e8a317;
+  --err: #5a5a66;
+}
+
+/* 跟随系统深色（仅当未手动指定浅色时生效） */
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0f172a;
-    --surface: #1e293b;
-    --card: #1e293b;
-    --text: #f1f5f9;
-    --muted: #94a3b8;
-    --primary: #3b82f6;
-    --primary-soft: #1e3a5f;
-    --accent: #f59e0b;
-    --accent-soft: #422006;
-    --border: #334155;
-    --bubble-in: #1e293b;
-    --ok: #22c55e;
-    --warn: #f59e0b;
-    --err: #475569;
+  :root:not([data-theme="light"]):not([data-theme="dark"]) {
+    --bg: #1c1c24;
+    --surface: #24242e;
+    --card: #2a2a36;
+    --text: #dcdcde;
+    --muted: #8b8b96;
+    --primary: #4d8ef0;
+    --primary-soft: #1e2a44;
+    --accent: #e8a317;
+    --accent-soft: #3d3210;
+    --border: #38384a;
+    --bubble-in: #2e2e3a;
+    --ok: #2db84d;
+    --warn: #e8a317;
+    --err: #5a5a66;
   }
 }
 
