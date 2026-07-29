@@ -33,7 +33,7 @@ export type ServerFrame =
 /** 字符串帧是控制信息，二进制帧一律是当前 file-meta 所属文件的分片。 */
 export type ChannelFrame =
   | { t: 'hello'; name: string }
-  | { t: 'msg'; text: string }
+  | { t: 'msg'; text: string; dm?: true }
   | { t: 'file-meta'; fid: string; name: string; size: number; mime: string }
   | { t: 'file-end'; fid: string };
 
@@ -71,6 +71,8 @@ export interface ChatMessage {
   ts: number;
   self: boolean;
   system?: boolean;
+  /** 私信标记：self 消息时 = 收件人名称；接收消息时 = 'dm' */
+  to?: string;
   /** 文件卡片消息（dir=in 有下载按钮，dir=out 只展示） */
   file?: { fid: string; name: string; size: number; dir: 'in' | 'out' };
 }

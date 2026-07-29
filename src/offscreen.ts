@@ -184,8 +184,8 @@ function pushState(): void {
   emit({ event: 'state', payload: snapshot() });
 }
 
-function addMessage(text: string, from: { id: string; name: string }, self: boolean, system = false): void {
-  const msg: ChatMessage = { id: crypto.randomUUID(), from: from.id, name: from.name, text, ts: Date.now(), self, system };
+function addMessage(text: string, from: { id: string; name: string }, self: boolean, system = false, to?: string): void {
+  const msg: ChatMessage = { id: crypto.randomUUID(), from: from.id, name: from.name, text, ts: Date.now(), self, system, to };
   state.messages.push(msg);
   if (state.messages.length > MAX_MESSAGES) {
     state.messages.splice(0, state.messages.length - MAX_MESSAGES);
@@ -654,7 +654,7 @@ function onChannelFrame(peer: Peer, frame: ChannelFrame): void {
       break;
 
     case 'msg':
-      addMessage(String(frame.text ?? '').slice(0, 4000), peer, false);
+      addMessage(String(frame.text ?? '').slice(0, 4000), peer, false, false, frame.dm ? 'dm' : undefined);
       if (!popupVisible) {
         void toSw({ target: 'sw', t: 'notify', title: `${peer.name} sent a message` }).catch(() => {});
       }
@@ -738,8 +738,12 @@ function sendText(text: string, to: string): void {
   const clean = text.slice(0, 4000);
   if (!clean.trim()) throw new Error('消息为空');
 
-  for (const peer of targets(to)) securePost(peer, { t: 'msg', text: clean });
-  addMessage(clean, { id: selfId, name: state.selfName }, true);
+  const isDm = to && to !== 'all';
+  const targetPeers = targets(to);
+  const recipientName = isDm ? (targetPeers[0]?.name ?? to) : undefined;
+
+  for (const peer of targetPeers) securePost(peer, { t: 'msg', text: clean, ...(isDm ? { dm: true as const } : {}) });
+  addMessage(clean, { id: selfId, name: state.selfName }, true, false, recipientName);
 }
 
 function untilLowBuffer(ch: RTCDataChannel): Promise<void> {

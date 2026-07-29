@@ -97,12 +97,21 @@ function renderState(s: AppState): void {
   if (document.activeElement !== els.group) els.group.value = s.cfg.room;
 
   els.peerCount.textContent = String(s.peers.length);
+  const currentTarget = els.target.value;
   els.peers.replaceChildren(
     ...s.peers.map((p) => {
       const li = document.createElement('li');
       li.className = p.ready ? 'ready' : '';
       if (p.trust?.changed) li.classList.add('trust-warn');
       else if (p.trust?.level === 'verified') li.classList.add('trust-ok');
+      if (currentTarget === p.id) li.classList.add('selected');
+      li.onclick = () => {
+        els.target.value = els.target.value === p.id ? 'all' : p.id;
+        els.target.dispatchEvent(new Event('change'));
+        renderPeerSelection();
+      };
+      li.style.cursor = 'pointer';
+      li.setAttribute('data-peer-id', p.id);
 
       const avatar = document.createElement('span');
       avatar.className = 'avatar';
@@ -152,6 +161,16 @@ function renderState(s: AppState): void {
   s.transfers.forEach(renderTransfer);
 }
 
+function renderPeerSelection(): void {
+  const selected = els.target.value;
+  for (const li of els.peers.children) {
+    const id = li.getAttribute('data-peer-id');
+    li.classList.toggle('selected', id === selected);
+  }
+}
+
+els.target.onchange = () => renderPeerSelection();
+
 function renderMessage(m: ChatMessage): void {
   if (rendered.has(m.id)) return;
   rendered.add(m.id);
@@ -162,11 +181,14 @@ function renderMessage(m: ChatMessage): void {
   }
 
   const div = document.createElement('div');
-  div.className = `msg ${m.self ? 'self' : ''} ${m.system ? 'system' : ''}`;
+  div.className = `msg ${m.self ? 'self' : ''} ${m.system ? 'system' : ''} ${m.to ? 'dm' : ''}`;
 
   const who = document.createElement('span');
   who.className = 'who';
-  who.textContent = `${m.name} · ${new Date(m.ts).toLocaleTimeString()}`;
+  let whoText = `${m.name} · ${new Date(m.ts).toLocaleTimeString()}`;
+  if (m.self && m.to) whoText += ` → ${m.to}`;
+  else if (!m.self && m.to === 'dm') whoText += ' · 私信';
+  who.textContent = whoText;
 
   // 只用 textContent / createTextNode —— 对端发来的内容不可信，绝不 innerHTML
   div.append(who, document.createTextNode(m.text));

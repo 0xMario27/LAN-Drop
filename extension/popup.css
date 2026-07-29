@@ -316,6 +316,13 @@ button svg {
   vertical-align: middle;
 }
 
+#peers li.selected {
+  background: var(--accent-soft);
+  border-radius: var(--radius-sm);
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
 #peers li .trust-icon {
   flex: none;
   color: var(--muted);
@@ -420,6 +427,16 @@ main {
   align-self: flex-end;
   background: var(--accent);
   color: #fff;
+}
+.msg.dm {
+  border-left: 3px solid var(--warn);
+  padding-left: 9px;
+}
+.msg.self.dm {
+  border-right: 3px solid var(--warn);
+  border-left: none;
+  padding-left: 12px;
+  padding-right: 9px;
 }
 .msg .who {
   display: block;
