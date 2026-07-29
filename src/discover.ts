@@ -39,7 +39,6 @@ export function isPrivateIPv4(address: string): boolean {
 
 /**
  * 待扫网段：当前已配置地址所在的那个排最前，其余按常见程度补齐。
- * ponytail: 一律按 /24 扫 —— /16 是 65536 个地址，不可能挨个试。
  */
 export function subnetsToScan(currentUrl: string): string[] {
   const known = hostOf(currentUrl);
@@ -102,7 +101,6 @@ export function probe(url: string, timeoutMs = PROBE_TIMEOUT_MS): Promise<boolea
 
 /**
  * 按批并发探测，命中即停。
- * ponytail: 分批而不是真正的连接池 —— 少十几行代码，一个 /24 也就多花一两秒。
  */
 export async function discover(
   urls: readonly string[],

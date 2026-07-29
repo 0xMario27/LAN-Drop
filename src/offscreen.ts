@@ -40,7 +40,6 @@ interface ReceivedFile {
 const RECONNECT_MS = 3000;
 const DEFAULT_URL = 'ws://localhost:8787';
 
-// ponytail: iceServers 留空 —— 不连 STUN，既省事又保证只能在同一局域网内打通。
 // 要跨 NAT 就在这里加 STUN/TURN，但那已经不是"局域网工具"了。
 const RTC_CONFIG: RTCConfiguration = { iceServers: [] };
 
@@ -738,7 +737,6 @@ async function sendFileTo(peer: Peer, meta: { name: string; type: string }, byte
 }
 
 // popup 传来的是 blob URL —— 扩展消息只走 JSON 序列化，ArrayBuffer 传不过去。
-// ponytail: 整个文件读进内存。局域网传几百 MB 没问题，要传 GB 级才需要改成流式分片。
 async function sendFile(file: OutgoingFile, to: string): Promise<void> {
   const list = targets(to);
   if (!list.length) throw new Error('没有已连接的对端');

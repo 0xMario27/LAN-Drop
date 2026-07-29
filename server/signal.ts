@@ -46,7 +46,6 @@ function send(ws: WebSocket, frame: ServerFrame): void {
 }
 
 export function createSignalServer({ port = 8787 } = {}): WebSocketServer {
-  // ponytail: 房间不限人数（按需求）。代价在客户端 —— 全网状连接数是 O(n²)，
   // 几十人以内没问题，真要上百人得把客户端换成 SFU 或星型转发。
   const rooms = new Map<string, Map<string, Member>>();
 
