@@ -36,6 +36,9 @@ const els = {
 
 const ARROW_DOWN = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>';
 const ARROW_UP = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>';
+const SHIELD_TOFU = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L4 6v6c0 5 3.5 9 8 10 4.5-1 8-5 8-10V6l-8-4z"/></svg>';
+const SHIELD_OK = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L4 6v6c0 5 3.5 9 8 10 4.5-1 8-5 8-10V6l-8-4z"/><polyline points="9 12 11 14 15 10"/></svg>';
+const SHIELD_WARN = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
 const FILE_ICON = '<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>';
 const CHECK_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
 
@@ -97,6 +100,8 @@ function renderState(s: AppState): void {
     ...s.peers.map((p) => {
       const li = document.createElement('li');
       li.className = p.ready ? 'ready' : '';
+      if (p.trust?.changed) li.classList.add('trust-warn');
+      else if (p.trust?.level === 'verified') li.classList.add('trust-ok');
 
       const avatar = document.createElement('span');
       avatar.className = 'avatar';
@@ -106,11 +111,28 @@ function renderState(s: AppState): void {
       name.className = 'peer-name';
       name.textContent = p.name;
 
+      // 信任盾牌
+      let shield: ChildNode | null = null;
+      if (p.trust?.changed) {
+        shield = svgIcon(SHIELD_WARN);
+        (shield as HTMLElement).classList.add('trust-icon', 'warn');
+        (shield as HTMLElement).title = `指纹变更！原 ${p.trust.fingerprint}`;
+      } else if (p.trust?.level === 'verified') {
+        shield = svgIcon(SHIELD_OK);
+        (shield as HTMLElement).classList.add('trust-icon', 'ok');
+        (shield as HTMLElement).title = `已信任 ${p.trust.fingerprint}`;
+      } else if (p.trust) {
+        shield = svgIcon(SHIELD_TOFU);
+        (shield as HTMLElement).classList.add('trust-icon', 'tofu');
+        (shield as HTMLElement).title = `首次信任 ${p.trust.fingerprint}`;
+      }
+
       const state = document.createElement('span');
       state.className = 'peer-state';
       state.textContent = p.ready ? '' : '连接中';
 
-      li.append(avatar, name, state);
+      if (shield) li.append(avatar, name, shield, state);
+      else li.append(avatar, name, state);
       return li;
     })
   );

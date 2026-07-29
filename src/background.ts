@@ -78,10 +78,43 @@ chrome.runtime.onMessage.addListener((raw: unknown, _sender, reply) => {
   }
 
   if (msg.t === 'download') {
-    // ponytail: offscreen 建 blob URL，这里代调 downloads —— offscreen 文档拿不到 chrome.downloads。
+    // ponytail: offscreen 建 blob URL，这里代调 downloads -- offscreen 文档拿不到 chrome.downloads。
     // blob URL 与本扩展同源，downloads 能解析；offscreen 一直存活所以 URL 不会失效。
     chrome.downloads.download({ url: msg.url, filename: msg.filename, saveAs: false }).then(
       () => reply({ ok: true, data: null }),
+      (e: unknown) => reply({ ok: false, error: String(e) })
+    );
+    return true;
+  }
+
+  if (msg.t === 'get-identity') {
+    chrome.storage.local.get('identity-v1').then(
+      (stored: { 'identity-v1'?: string }) => reply({ ok: true, data: stored['identity-v1'] ?? null }),
+      (e: unknown) => reply({ ok: false, error: String(e) })
+    );
+    return true;
+  }
+
+  if (msg.t === 'set-identity') {
+    chrome.storage.local.set({ 'identity-v1': msg.blob }).then(
+      () => reply({ ok: true, data: null }),
+      (e: unknown) => reply({ ok: false, error: String(e) })
+    );
+    return true;
+  }
+
+  if (msg.t === 'get-trusted-peer') {
+    chrome.storage.local.get(`peer-${msg.peerId}`).then(
+      (stored: Record<string, unknown>) => reply({ ok: true, data: stored[`peer-${msg.peerId}`] ?? null }),
+      (e: unknown) => reply({ ok: false, error: String(e) })
+    );
+    return true;
+  }
+
+  if (msg.t === 'set-trusted-peer') {
+    const record = { pubkey: msg.pubkey, level: msg.level, firstSeen: Date.now() };
+    chrome.storage.local.set({ [`peer-${msg.peerId}`]: record }).then(
+      () => reply({ ok: true, data: record }),
       (e: unknown) => reply({ ok: false, error: String(e) })
     );
     return true;

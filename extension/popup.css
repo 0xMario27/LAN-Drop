@@ -316,6 +316,26 @@ button svg {
   vertical-align: middle;
 }
 
+#peers li .trust-icon {
+  flex: none;
+  color: var(--muted);
+}
+#peers li .trust-icon.tofu {
+  color: var(--muted);
+}
+#peers li .trust-icon.ok {
+  color: var(--ok);
+}
+#peers li .trust-icon.warn {
+  color: var(--warn);
+}
+#peers li.trust-warn {
+  background: color-mix(in srgb, var(--warn) 8%, transparent);
+  border-radius: var(--radius-sm);
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
 /* ---------- 传输 ---------- */
 
 #transfers {

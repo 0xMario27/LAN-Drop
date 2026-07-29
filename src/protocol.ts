@@ -11,16 +11,18 @@ export type SignalPayload =
 export interface PeerInfo {
   id: string;
   name: string;
+  /** base64 的 X25519 公钥；旧版无此字段 = 未认证 */
+  pubkey?: string;
 }
 
 export type ClientFrame =
   /** room 为 null 时由服务器按来源网段自动归组 */
-  | { t: 'join'; room: string | null; id: string; name: string }
+  | { t: 'join'; room: string | null; id: string; name: string; pubkey: string }
   | { t: 'signal'; to: string; data: SignalPayload };
 
 export type ServerFrame =
   | { t: 'joined'; room: string; peers: PeerInfo[] }
-  | { t: 'peer-join'; id: string; name: string }
+  | { t: 'peer-join'; id: string; name: string; pubkey: string }
   | { t: 'peer-leave'; id: string }
   | { t: 'signal'; from: string; data: SignalPayload }
   | { t: 'error'; message: string };
@@ -44,8 +46,19 @@ export interface Config {
   room: string;
 }
 
+export type TrustLevel = 'tofu' | 'verified';
+
+export interface TrustState {
+  level: TrustLevel;
+  fingerprint: string;
+  /** 指纹与首次不符时为 true（密钥变更警告） */
+  changed: boolean;
+}
+
 export interface PeerView extends PeerInfo {
   ready: boolean;
+  /** 已认证对端的信任状态；未认证（无 pubkey）为 undefined */
+  trust?: TrustState;
 }
 
 export interface ChatMessage {
@@ -118,6 +131,10 @@ export type SwMessage = { target: 'sw' } & (
   | { t: 'get-config' }
   | { t: 'set-config'; cfg: Config }
   | { t: 'download'; url: string; filename: string }
+  | { t: 'get-identity' }
+  | { t: 'set-identity'; blob: string }
+  | { t: 'get-trusted-peer'; peerId: string }
+  | { t: 'set-trusted-peer'; peerId: string; pubkey: string; level: TrustLevel }
 );
 
 /** 自动发现的实时进度；找到或扫完时 done 为 true。 */

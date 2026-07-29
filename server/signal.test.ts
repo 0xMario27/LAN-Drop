@@ -31,13 +31,13 @@ test('同房间互相发现并能转发信令，跨房间不可见', async (t) =
   t.after(() => wss.close());
 
   const room = 'a'.repeat(64);
-  const a = await client(port, { t: 'join', room, id: 'a', name: '甲' });
+  const a = await client(port, { t: 'join', room, id: 'a', name: '甲', pubkey: '' });
   assert.deepEqual(await nextFrame(a), { t: 'joined', room, peers: [] });
 
-  const b = await client(port, { t: 'join', room, id: 'b', name: '乙' });
+  const b = await client(port, { t: 'join', room, id: 'b', name: '乙', pubkey: '' });
   const [joinedB, notifiedA] = await Promise.all([nextFrame(b), nextFrame(a)]);
-  assert.deepEqual(joinedB, { t: 'joined', room, peers: [{ id: 'a', name: '甲' }] });
-  assert.deepEqual(notifiedA, { t: 'peer-join', id: 'b', name: '乙' });
+  assert.deepEqual(joinedB, { t: 'joined', room, peers: [{ id: 'a', name: '甲', pubkey: '' }] });
+  assert.deepEqual(notifiedA, { t: 'peer-join', id: 'b', name: '乙', pubkey: '' });
 
   // 后进者向先到者发 offer
   const data = { sdp: { type: 'offer', sdp: 'x' } };
@@ -46,7 +46,7 @@ test('同房间互相发现并能转发信令，跨房间不可见', async (t) =
 
   // 另一个房间的人既看不到成员，也发不进来
   const other = 'b'.repeat(64);
-  const c = await client(port, { t: 'join', room: other, id: 'c', name: '丙' });
+  const c = await client(port, { t: 'join', room: other, id: 'c', name: '丙', pubkey: '' });
   assert.deepEqual(await nextFrame(c), { t: 'joined', room: other, peers: [] });
   c.send(JSON.stringify({ t: 'signal', to: 'a', data: { sdp: { type: 'offer', sdp: 'leak' } } }));
 
@@ -67,7 +67,7 @@ test('房间没有人数上限', async (t) => {
   const sockets: WebSocket[] = [];
 
   for (let i = 0; i < size; i++) {
-    const ws = await client(port, { t: 'join', room, id: `p${i}`, name: `第${i}位` });
+    const ws = await client(port, { t: 'join', room, id: `p${i}`, name: `第${i}位`, pubkey: '' });
     const frame = await nextFrame(ws);
     assert.equal(frame.t, 'joined', `第 ${i} 位应当成功加入，实际收到 ${JSON.stringify(frame)}`);
     if (frame.t === 'joined') assert.equal(frame.peers.length, i);

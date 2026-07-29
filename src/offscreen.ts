@@ -2,6 +2,10 @@
 // 跑在 offscreen 文档里，弹窗关掉也不会断线。
 
 import { candidates, discover, portFrom, subnetsToScan } from './discover.js';
+import { generateIdentity, serializeIdentity, deserializeIdentity, derivePeerId, fingerprint, type Identity } from './identity.js';
+import { initiatorHandshake, responderHandshake, type HandshakeResult } from './noise.js';
+import { SecureChannel, packFrame, unpackFrame, CTRL_PREFIX } from './secure-channel.js';
+import { fromBase64, toBase64 } from './crypto-primitives.js';
 import type {
   AppState,
   ChannelFrame,
@@ -10,6 +14,7 @@ import type {
   Config,
   Discovery,
   LogEntry,
+  PeerView,
   Reply,
   OffscreenMessage,
   OutgoingFile,
@@ -18,6 +23,7 @@ import type {
   SignalPayload,
   Status,
   SwMessage,
+  TrustState,
   Transfer,
 } from './protocol.js';
 
@@ -49,15 +55,26 @@ interface Incoming {
 interface Peer {
   id: string;
   name: string;
+  pubkey: string; // base64，从信令帧拿到
   pc: RTCPeerConnection;
   ch: RTCDataChannel | null;
   ready: boolean;
+  handshaking: boolean;
+  channel: SecureChannel | null; // 握手成功后创建
+  /** 握手期间暂存收到的消息（等 handshake recv 调用） */
+  handshakeQueue: Uint8Array[];
+  handshakeResolve: ((msg: Uint8Array) => void) | null;
   /** 每个对端一条串行发送队列，避免多文件的二进制帧交错 */
   queue: Promise<void>;
   incoming: Incoming | null;
+  trust: TrustState | undefined;
 }
 
-const selfId = crypto.randomUUID().slice(0, 8);
+let selfId = '--------'; // 握手前占位，loadIdentity 后替换为 peerId
+let myIdentity: Identity | null = null;
+
+/** 已知的对端 pubkey（从信令帧拿到，握手时用） */
+const knownPubkeys = new Map<string, string>();
 
 const state = {
   cfg: { url: DEFAULT_URL, name: '', room: '' } as Config,
@@ -96,6 +113,43 @@ async function toSw<T>(msg: SwMessage): Promise<T> {
   return res.data;
 }
 
+/* ---------- 身份 ---------- */
+
+async function loadIdentity(): Promise<Identity> {
+  const stored = await toSw<string | null>({ target: 'sw', t: 'get-identity' });
+  if (stored) {
+    const id = deserializeIdentity(stored);
+    selfId = id.peerId;
+    return id;
+  }
+  const id = generateIdentity();
+  selfId = id.peerId;
+  await toSw({ target: 'sw', t: 'set-identity', blob: serializeIdentity(id) });
+  return id;
+}
+
+/** TOFU：查 / 存 trusted peer，返回信任状态 */
+async function checkAndSaveTrust(peerId: string, pubkey: Uint8Array): Promise<TrustState> {
+  const fp = fingerprint(pubkey);
+  const pubkeyB64 = toBase64(pubkey);
+  const stored = await toSw<{ pubkey: string; level: 'tofu' | 'verified'; firstSeen: number } | null>(
+    { target: 'sw', t: 'get-trusted-peer', peerId }
+  );
+
+  if (!stored) {
+    // 首次见到：TOFU 存储
+    await toSw({ target: 'sw', t: 'set-trusted-peer', peerId, pubkey: pubkeyB64, level: 'tofu' });
+    return { level: 'tofu', fingerprint: fp, changed: false };
+  }
+
+  if (stored.pubkey !== pubkeyB64) {
+    // 指纹变更：密钥换了，警告但不自动更新
+    return { level: stored.level, fingerprint: fp, changed: true };
+  }
+
+  return { level: stored.level, fingerprint: fp, changed: false };
+}
+
 function emit(msg: Omit<PopupMessage, 'target'>): void {
   void chrome.runtime.sendMessage({ target: 'popup', ...msg }).catch(() => {
     /* 弹窗没开，忽略 */
@@ -108,7 +162,13 @@ function snapshot(): AppState {
     cfg: state.cfg,
     status: state.status,
     error: state.error,
-    peers: [...state.peers.values()].map((p) => ({ id: p.id, name: p.name, ready: p.ready })),
+    peers: [...state.peers.values()].map((p): PeerView => ({
+      id: p.id,
+      name: p.name,
+      pubkey: p.pubkey || undefined,
+      ready: p.ready,
+      trust: p.trust,
+    })),
     messages: state.messages,
     transfers: [...state.transfers.values()],
     logs: state.logs,
@@ -263,7 +323,7 @@ async function connect(): Promise<void> {
     // 群组名本地哈希后再发，服务器看不到明文群名
     const code = state.cfg.room.trim();
     void (code ? sha256hex(code) : Promise.resolve(null)).then((room) =>
-      send({ t: 'join', room, id: selfId, name: state.selfName })
+      send({ t: 'join', room, id: selfId, name: state.selfName, pubkey: myIdentity ? toBase64(myIdentity.publicKey) : '' })
     );
   };
 
@@ -304,12 +364,15 @@ async function handleSignal(frame: ServerFrame): Promise<void> {
     case 'joined':
       log(`已加入房间，房内已有 ${frame.peers.length} 人`);
       setStatus('connected');
-      // 后进者主动发 offer，天然避免 glare，不需要 perfect negotiation
-      for (const p of frame.peers) await createPeer(p.id, p.name, true);
+      for (const p of frame.peers) {
+        if (p.pubkey) knownPubkeys.set(p.id, p.pubkey);
+        await createPeer(p.id, p.name, p.pubkey ?? '', true);
+      }
       break;
 
     case 'peer-join':
-      await createPeer(frame.id, frame.name, false);
+      if (frame.pubkey) knownPubkeys.set(frame.id, frame.pubkey);
+      await createPeer(frame.id, frame.name, frame.pubkey ?? '', false);
       break;
 
     case 'peer-leave':
@@ -328,7 +391,7 @@ async function handleSignal(frame: ServerFrame): Promise<void> {
 
 /* ---------- WebRTC ---------- */
 
-async function createPeer(id: string, name: string, initiator: boolean): Promise<Peer> {
+async function createPeer(id: string, name: string, pubkey: string, initiator: boolean): Promise<Peer> {
   const existing = state.peers.get(id);
   if (existing) return existing;
 
@@ -336,13 +399,20 @@ async function createPeer(id: string, name: string, initiator: boolean): Promise
   const peer: Peer = {
     id,
     name: name || '匿名',
+    pubkey,
     pc,
     ch: null,
     ready: false,
+    handshaking: false,
+    channel: null,
+    handshakeQueue: [],
+    handshakeResolve: null,
     queue: Promise.resolve(),
     incoming: null,
+    trust: undefined,
   };
   state.peers.set(id, peer);
+  (peer as Peer & { _initiator?: boolean })._initiator = initiator;
 
   pc.onicecandidate = (e) => {
     if (e.candidate) send({ t: 'signal', to: id, data: { ice: e.candidate.toJSON() } });
@@ -372,7 +442,7 @@ function dropPeer(id: string): void {
 }
 
 async function onPeerSignal(from: string, data: SignalPayload): Promise<void> {
-  const peer = state.peers.get(from) ?? (await createPeer(from, '', false));
+  const peer = state.peers.get(from) ?? (await createPeer(from, '', knownPubkeys.get(from) ?? '', false));
   const pc = peer.pc;
 
   if (data.sdp) {
@@ -393,8 +463,19 @@ async function onPeerSignal(from: string, data: SignalPayload): Promise<void> {
 
 /* ---------- DataChannel 协议 ---------- */
 
-function post(ch: RTCDataChannel, frame: ChannelFrame): void {
-  ch.send(JSON.stringify(frame));
+/** 加密发送控制帧 */
+function securePost(peer: Peer, frame: ChannelFrame): void {
+  if (!peer.ch || !peer.channel) return;
+  const plaintext = new TextEncoder().encode('\x01' + JSON.stringify(frame));
+  const { nonce, ciphertext } = peer.channel.encrypt(plaintext);
+  peer.ch.send(packFrame(nonce, ciphertext));
+}
+
+/** 加密发送文件分片 */
+function secureSendChunk(peer: Peer, chunk: ArrayBuffer): void {
+  if (!peer.ch || !peer.channel) return;
+  const { nonce, ciphertext } = peer.channel.encrypt(new Uint8Array(chunk));
+  peer.ch.send(packFrame(nonce, ciphertext));
 }
 
 function wireChannel(peer: Peer, ch: RTCDataChannel): void {
@@ -402,27 +483,136 @@ function wireChannel(peer: Peer, ch: RTCDataChannel): void {
   ch.binaryType = 'arraybuffer';
   ch.bufferedAmountLowThreshold = MAX_BUFFER / 2;
 
-  ch.onopen = () => {
-    peer.ready = true;
-    post(ch, { t: 'hello', name: state.selfName });
-    pushState();
-  };
+  ch.onopen = () => void runHandshake(peer);
   ch.onclose = () => {
     peer.ready = false;
+    peer.channel = null;
     pushState();
   };
   ch.onerror = (e) => console.warn('[LAN Drop] channel error', e);
   ch.onmessage = (e: MessageEvent<string | ArrayBuffer>) => {
-    if (typeof e.data !== 'string') return onFileChunk(peer, e.data);
+    if (typeof e.data === 'string') return; // 握手期可能有 string，忽略
+    const msg = new Uint8Array(e.data as ArrayBuffer);
 
-    let frame: ChannelFrame;
-    try {
-      frame = JSON.parse(e.data) as ChannelFrame;
-    } catch {
+    // 握手期：消息进队列等 handshake recv 取走
+    if (peer.handshaking) {
+      if (peer.handshakeResolve) {
+        peer.handshakeResolve(msg);
+        peer.handshakeResolve = null;
+      } else {
+        peer.handshakeQueue.push(msg);
+      }
       return;
     }
-    onChannelFrame(peer, frame);
+
+    // 加密期：解密后分发
+    if (!peer.channel) return;
+    const { nonce, ciphertext } = unpackFrame(e.data as ArrayBuffer);
+    let plaintext: Uint8Array;
+    try {
+      plaintext = peer.channel.decrypt(nonce, ciphertext);
+    } catch (e) {
+      console.warn('[LAN Drop] decrypt failed', e);
+      return;
+    }
+
+    if (plaintext[0] === CTRL_PREFIX) {
+      let frame: ChannelFrame;
+      try {
+        frame = JSON.parse(new TextDecoder().decode(plaintext.slice(1))) as ChannelFrame;
+      } catch {
+        return;
+      }
+      onChannelFrame(peer, frame);
+    } else {
+      onFileChunk(peer, plaintext.buffer as ArrayBuffer);
+    }
   };
+}
+
+/** 握手 recv：从队列取或等下一条消息 */
+function handshakeRecv(peer: Peer): Promise<Uint8Array> {
+  const queued = peer.handshakeQueue.shift();
+  if (queued) return Promise.resolve(queued);
+  return new Promise((resolve) => {
+    peer.handshakeResolve = resolve;
+  });
+}
+
+/** 握手 send：发原始字节 */
+function handshakeSend(peer: Peer, msg: Uint8Array): void {
+  peer.ch?.send(msg.buffer as ArrayBuffer);
+}
+
+async function runHandshake(peer: Peer): Promise<void> {
+  if (!myIdentity || !peer.ch) return;
+  peer.handshaking = true;
+  log(`开始与 ${peer.id} 握手`);
+
+  const remotePubkeyB64 = knownPubkeys.get(peer.id);
+  if (!remotePubkeyB64) {
+    log(`对端 ${peer.id} 无 pubkey，跳过握手（未认证模式）`);
+    peer.ready = true;
+    peer.handshaking = false;
+    securePost(peer, { t: 'hello', name: state.selfName });
+    pushState();
+    return;
+  }
+  const remotePubkey = fromBase64(remotePubkeyB64);
+
+  // 发起方 = 后进者（createPeer initiator=true），响应方 = 先进者
+  // 但这里 initiator 由 createPeer 的参数决定，存于 peer 上的逻辑
+  // 实际上：initiator 创建 DataChannel，所以 ch.onopen 时 initiator 先发
+  // 我们通过 peer.pc.currentLocalDescription 判断... 不，太复杂。
+  // 更简单：createPeer(initiator=true) 的那个创建了 DataChannel（wireChannel 在 createDataChannel 后调用）
+  // createPeer(initiator=false) 的那个在 ondatachannel 里调用 wireChannel
+  // 所以：如果 peer.ch 是我们自己 createDataChannel 创建的 -> initiator
+  // 判断方式：initiator=true 的 createPeer 调用了 wireChannel(peer, pc.createDataChannel(...))
+  // 我们在 createPeer 里记录 initiator 标志
+
+  try {
+    // 10s 超时
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('握手超时')), 10000)
+    );
+
+    // 判断是否为 initiator：initiator 在 createPeer 里创建了 DataChannel
+    // 用 peer._initiator 标记（在 createPeer 里设置）
+    const isInitiator = (peer as Peer & { _initiator?: boolean })._initiator ?? false;
+
+    let result: HandshakeResult;
+    const handshakePromise = isInitiator
+      ? initiatorHandshake(myIdentity, remotePubkey, (m) => handshakeSend(peer, m), () => handshakeRecv(peer))
+      : responderHandshake(myIdentity, (m) => handshakeSend(peer, m), () => handshakeRecv(peer));
+
+    result = await Promise.race([handshakePromise, timeout]);
+
+    // 验证：解出的对端公钥 hash 必须等于 peer.id
+    const derivedId = derivePeerId(result.remoteStaticPubkey);
+    if (derivedId !== peer.id) {
+      peer.pc.close();
+      log(`对端身份不符：MITM 嫌疑（peer=${peer.id}）`);
+      note(`对端身份校验失败：${peer.name} 可能存在中间人`);
+      return;
+    }
+
+    // TOFU 信任
+    peer.trust = await checkAndSaveTrust(peer.id, result.remoteStaticPubkey);
+
+    // 创建加密通道
+    peer.channel = new SecureChannel(result.rootKey, isInitiator);
+    peer.handshaking = false;
+    peer.ready = true;
+    log(`与 ${peer.name} 握手成功，信任=${peer.trust.level}${peer.trust.changed ? '（变更警告）' : ''}`);
+    securePost(peer, { t: 'hello', name: state.selfName });
+    pushState();
+  } catch (e) {
+    peer.handshaking = false;
+    log(`与 ${peer.name} 握手失败：${(e as Error).message}`);
+    peer.pc.close();
+    state.peers.delete(peer.id);
+    pushState();
+  }
 }
 
 function onChannelFrame(peer: Peer, frame: ChannelFrame): void {
@@ -514,7 +704,7 @@ function sendText(text: string, to: string): void {
   const clean = text.slice(0, 4000);
   if (!clean.trim()) throw new Error('消息为空');
 
-  for (const peer of targets(to)) post(peer.ch as RTCDataChannel, { t: 'msg', text: clean });
+  for (const peer of targets(to)) securePost(peer, { t: 'msg', text: clean });
   addMessage(clean, { id: selfId, name: state.selfName }, true);
 }
 
@@ -528,7 +718,7 @@ async function sendFileTo(peer: Peer, meta: { name: string; type: string }, byte
 
   const fid = crypto.randomUUID();
   const size = bytes.byteLength;
-  post(ch, { t: 'file-meta', fid, name: meta.name, size, mime: meta.type });
+  securePost(peer, { t: 'file-meta', fid, name: meta.name, size, mime: meta.type });
 
   const record: Transfer = { fid, name: meta.name, size, received: 0, dir: 'out', peer: peer.name, done: false };
   state.transfers.set(fid, record);
@@ -537,12 +727,12 @@ async function sendFileTo(peer: Peer, meta: { name: string; type: string }, byte
   for (let offset = 0; offset < size; offset += CHUNK) {
     if (ch.readyState !== 'open') throw new Error('连接已断开');
     if (ch.bufferedAmount > MAX_BUFFER) await untilLowBuffer(ch);
-    ch.send(bytes.slice(offset, offset + CHUNK));
+    secureSendChunk(peer, bytes.slice(offset, offset + CHUNK));
     record.received = Math.min(offset + CHUNK, size);
     emit({ event: 'transfer', payload: record });
   }
 
-  post(ch, { t: 'file-end', fid });
+  securePost(peer, { t: 'file-end', fid });
   record.done = true;
   emit({ event: 'transfer', payload: record });
 }
@@ -630,6 +820,8 @@ chrome.runtime.onMessage.addListener((raw: unknown, _sender, reply) => {
 
 void (async () => {
   log('offscreen 启动');
+  myIdentity = await loadIdentity();
+  log(`身份加载完成：peerId=${selfId.slice(0, 16)}…`);
   const configured = await loadConfig();
   log(configured ? `读到已保存的地址 ${state.cfg.url}` : '没有已保存的地址，准备自动发现');
   pushState();

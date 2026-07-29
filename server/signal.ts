@@ -12,6 +12,7 @@ const HEX64 = /^[0-9a-f]{64}$/;
 interface Member {
   ws: WebSocket;
   name: string;
+  pubkey: string;
 }
 
 /** 一条连接的会话状态；join 之前 id 为 null。 */
@@ -100,9 +101,10 @@ export function createSignalServer({ port = 8787 } = {}): WebSocketServer {
     if (room.has(id)) return send(ws, { t: 'error', message: 'id 冲突' }), log('WARN', `拒绝：id 冲突 ip=${session.ip}`);
 
     const name = String(frame.name ?? '').slice(0, 32) || '匿名';
-    const peers: PeerInfo[] = [...room].map(([pid, m]) => ({ id: pid, name: m.name }));
+    const pubkey = String(frame.pubkey ?? '').slice(0, 200); // base64 公钥，长度限制防爆
+    const peers: PeerInfo[] = [...room].map(([pid, m]) => ({ id: pid, name: m.name, pubkey: m.pubkey }));
 
-    room.set(id, { ws, name });
+    room.set(id, { ws, name, pubkey });
     session.room = roomKey;
     session.id = id;
 
@@ -110,7 +112,7 @@ export function createSignalServer({ port = 8787 } = {}): WebSocketServer {
 
     send(ws, { t: 'joined', room: roomKey, peers });
     for (const [pid, m] of room) {
-      if (pid !== id) send(m.ws, { t: 'peer-join', id, name });
+      if (pid !== id) send(m.ws, { t: 'peer-join', id, name, pubkey });
     }
   }
 
