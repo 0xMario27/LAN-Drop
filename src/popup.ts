@@ -12,8 +12,9 @@ const els = {
   status: el<HTMLSpanElement>('status'),
   room: el<HTMLSpanElement>('room'),
   log: el<HTMLPreElement>('log'),
-  settings: el<HTMLElement>('settings'),
+  settingsOverlay: el<HTMLElement>('settings-overlay'),
   toggleSettings: el<HTMLButtonElement>('toggle-settings'),
+  closeSettings: el<HTMLButtonElement>('close-settings'),
   url: el<HTMLInputElement>('url'),
   scan: el<HTMLButtonElement>('scan'),
   scanStatus: el<HTMLParagraphElement>('scan-status'),
@@ -289,14 +290,21 @@ chrome.runtime.onMessage.addListener((raw: unknown) => {
 });
 
 els.scan.onclick = () => {
-  els.settings.hidden = false;
   void toOffscreen<AppState>({ t: 'discover' })
     .then(renderState)
     .catch((e: unknown) => showError((e as Error).message));
 };
 
 els.toggleSettings.onclick = () => {
-  els.settings.hidden = !els.settings.hidden;
+  els.settingsOverlay.hidden = false;
+};
+
+els.closeSettings.onclick = () => {
+  els.settingsOverlay.hidden = true;
+};
+
+els.settingsOverlay.onclick = (e) => {
+  if (e.target === els.settingsOverlay) els.settingsOverlay.hidden = true;
 };
 
 els.connect.onclick = async () => {
@@ -308,7 +316,7 @@ els.connect.onclick = async () => {
         cfg: { url: els.url.value.trim(), name: els.name.value.trim(), room: els.group.value.trim() },
       })
     );
-    els.settings.hidden = true;
+    els.settingsOverlay.hidden = true;
   } catch (e) {
     showError((e as Error).message);
   } finally {

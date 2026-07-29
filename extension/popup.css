@@ -522,6 +522,47 @@ footer select {
   width: auto;
 }
 
+/* ---------- 设置弹窗 ---------- */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.dialog {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+  padding: 20px;
+  width: 480px;
+  max-width: 90vw;
+  max-height: 85vh;
+  overflow-y: auto;
+  display: grid;
+  gap: 12px;
+}
+
+.dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.dialog-header strong {
+  font-size: 16px;
+}
+
+.dialog .row button {
+  white-space: nowrap;
+}
+
 /* ---------- 窄窗口：上下堆叠 ---------- */
 
 @media (max-width: 720px) {
