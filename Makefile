@@ -49,7 +49,7 @@ serve: node_modules ## 直接用 Node 起信令服务（不走 Docker）
 	PORT=$(PORT) npm start
 
 up: ## 用 Docker 起信令服务（后台常驻）
-	docker compose up -d --build
+	PORT=$(PORT) docker compose up -d --build
 	@$(MAKE) --no-print-directory ip
 
 down: ## 停掉 Docker 里的信令服务

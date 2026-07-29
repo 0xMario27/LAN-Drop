@@ -5,9 +5,9 @@ services:
     container_name: lan-drop-signal
     restart: unless-stopped
     environment:
-      PORT: 8787
+      PORT: ${PORT:-8787}
     ports:
-      - '8787:8787'
+      - '${PORT:-8787}:${PORT:-8787}'
     # Linux 上可改用宿主网络，让服务器看到真实来源 IP（"按网段自动分组"才准确）：
     # 注释掉上面的 ports，改成 network_mode: host
     #
