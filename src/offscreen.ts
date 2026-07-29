@@ -375,6 +375,7 @@ async function connect(): Promise<void> {
   socket.onclose = (e) => {
     if (ws !== socket) return;
     ws = null;
+    stopHeartbeat();
     teardown();
     log(`连接关闭（code=${e.code}），${RECONNECT_MS / 1000} 秒后重试`);
     setStatus('disconnected', state.error || '连接已断开，正在重试…');
