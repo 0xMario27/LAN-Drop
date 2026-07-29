@@ -26,6 +26,7 @@ const els = {
   peerCount: el<HTMLSpanElement>('peer-count'),
   messages: el<HTMLElement>('messages'),
   transfers: el<HTMLElement>('transfers'),
+  xferTitle: el<HTMLElement>('xfer-title'),
   target: el<HTMLSelectElement>('target'),
   text: el<HTMLTextAreaElement>('text'),
   send: el<HTMLButtonElement>('send'),
@@ -33,8 +34,27 @@ const els = {
   file: el<HTMLInputElement>('file'),
 };
 
+const ARROW_DOWN = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>';
+const ARROW_UP = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>';
+const FILE_ICON = '<svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>';
+const CHECK_ICON = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+
+function svgIcon(markup: string): ChildNode {
+  const tpl = document.createElement('template');
+  tpl.innerHTML = markup;
+  return tpl.content.firstChild as ChildNode;
+}
+
 const transferRows = new Map<string, HTMLDivElement>();
 let rendered = new Set<string>();
+const downloaded = new Set<string>();
+
+function formatBytes(n: number): string {
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let i = 0;
+  while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+  return `${n.toFixed(i ? 1 : 0)} ${units[i]}`;
+}
 
 async function toOffscreen<T>(cmd: PopupCommand): Promise<T> {
   const res = (await chrome.runtime.sendMessage({ target: 'offscreen', ...cmd })) as Reply<T> | undefined;
@@ -77,7 +97,20 @@ function renderState(s: AppState): void {
     ...s.peers.map((p) => {
       const li = document.createElement('li');
       li.className = p.ready ? 'ready' : '';
-      li.textContent = p.ready ? p.name : `${p.name}（连接中）`;
+
+      const avatar = document.createElement('span');
+      avatar.className = 'avatar';
+      avatar.textContent = p.name ? p.name.charAt(0) : '?';
+
+      const name = document.createElement('span');
+      name.className = 'peer-name';
+      name.textContent = p.name;
+
+      const state = document.createElement('span');
+      state.className = 'peer-state';
+      state.textContent = p.ready ? '' : '连接中';
+
+      li.append(avatar, name, state);
       return li;
     })
   );
@@ -91,7 +124,8 @@ function renderState(s: AppState): void {
   s.messages.forEach(renderMessage);
 
   transferRows.clear();
-  els.transfers.replaceChildren();
+  els.transfers.replaceChildren(els.xferTitle);
+  els.transfers.hidden = s.transfers.length === 0;
   s.transfers.forEach(renderTransfer);
 }
 
@@ -99,8 +133,13 @@ function renderMessage(m: ChatMessage): void {
   if (rendered.has(m.id)) return;
   rendered.add(m.id);
 
+  if (m.file) {
+    renderFileCard(m);
+    return;
+  }
+
   const div = document.createElement('div');
-  div.className = `msg ${m.self ? 'self' : ''}`;
+  div.className = `msg ${m.self ? 'self' : ''} ${m.system ? 'system' : ''}`;
 
   const who = document.createElement('span');
   who.className = 'who';
@@ -126,7 +165,10 @@ function renderTransfer(t: Transfer): void {
   const bar = row.children[1] as HTMLProgressElement;
   const pct = t.size ? Math.round((t.received / t.size) * 100) : 100;
 
-  label.textContent = `${t.dir === 'in' ? '⬇' : '⬆'} ${t.name} · ${t.peer} · ${t.done ? '完成' : `${pct}%`}`;
+  label.replaceChildren(
+    svgIcon(t.dir === 'in' ? ARROW_DOWN : ARROW_UP),
+    document.createTextNode(` ${t.name} · ${t.peer} · ${t.done ? '完成' : `${pct}%`}`)
+  );
   bar.max = t.size || 1;
   bar.value = t.received;
 
@@ -134,6 +176,65 @@ function renderTransfer(t: Transfer): void {
     const finished = row;
     setTimeout(() => finished.remove(), 4000);
   }
+}
+
+function renderFileCard(m: ChatMessage): void {
+  const f = m.file!;
+  const div = document.createElement('div');
+  div.className = `msg file ${m.self ? 'self' : ''}`;
+
+  const who = document.createElement('span');
+  who.className = 'who';
+  who.textContent = `${m.name} · ${new Date(m.ts).toLocaleTimeString()}`;
+
+  const card = document.createElement('div');
+  card.className = 'file-card';
+  card.append(svgIcon(FILE_ICON));
+
+  const info = document.createElement('div');
+  info.className = 'file-info';
+
+  const nameEl = document.createElement('span');
+  nameEl.className = 'file-name';
+  nameEl.textContent = f.name;
+
+  const meta = document.createElement('span');
+  meta.className = 'file-meta';
+  meta.textContent = formatBytes(f.size);
+
+  info.append(nameEl, meta);
+  card.append(info);
+
+  if (f.dir === 'in' && !downloaded.has(f.fid)) {
+    const btn = document.createElement('button');
+    btn.className = 'file-dl';
+    btn.textContent = '下载';
+    btn.onclick = () => {
+      btn.disabled = true;
+      void toOffscreen({ t: 'download-received', fid: f.fid }).then(() => {
+        downloaded.add(f.fid);
+        btn.replaceChildren(svgIcon(CHECK_ICON), document.createTextNode(' 已下载'));
+      }).catch((e: unknown) => {
+        btn.disabled = false;
+        showError((e as Error).message);
+      });
+    };
+    card.append(btn);
+  } else if (f.dir === 'in') {
+    const done = document.createElement('span');
+    done.className = 'file-done';
+    done.textContent = '已下载';
+    card.append(done);
+  } else {
+    const sent = document.createElement('span');
+    sent.className = 'file-done';
+    sent.textContent = '已发送';
+    card.append(sent);
+  }
+
+  div.append(who, card);
+  els.messages.append(div);
+  els.messages.scrollTop = els.messages.scrollHeight;
 }
 
 function renderDiscovery(d: Discovery): void {

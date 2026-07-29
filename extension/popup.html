@@ -10,16 +10,16 @@
       <header>
         <span id="dot" class="dot"></span>
         <strong id="me">…</strong>
-        <button id="toggle-settings" class="icon" title="设置">⚙</button>
+        <button id="toggle-settings" class="icon" title="设置"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
       </header>
       <p class="muted small meta"><span id="status"></span> <span id="room"></span></p>
 
-      <section id="settings" hidden>
+      <section id="settings" class="panel" hidden>
         <label>
           信令服务器（局域网 ws:// 或公网 wss://）
           <span class="row">
             <input id="url" type="text" placeholder="ws://192.168.1.10:8787" />
-            <button id="scan" title="扫描本机所在网段">🔍</button>
+            <button id="scan" title="扫描本机所在网段"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> 自动发现</button>
           </span>
         </label>
         <p id="scan-status" class="muted small" hidden></p>
@@ -39,12 +39,14 @@
         </details>
       </section>
 
-      <section id="peers-wrap">
+      <section id="peers-wrap" class="panel">
         <div class="section-title">在线成员 <span id="peer-count">0</span></div>
         <ul id="peers"></ul>
       </section>
 
-      <section id="transfers"></section>
+      <section id="transfers" class="panel">
+        <div id="xfer-title" class="section-title">传输</div>
+      </section>
     </aside>
 
     <main>
@@ -57,8 +59,8 @@
         </div>
         <textarea id="text" rows="3" placeholder="输入消息，Enter 发送，Shift+Enter 换行"></textarea>
         <div class="row end">
-          <button id="pick-file">📎 发送文件</button>
-          <button id="send" class="primary">发送</button>
+          <button id="pick-file"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg> 发送文件</button>
+          <button id="send" class="primary"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> 发送</button>
         </div>
         <input id="file" type="file" hidden multiple />
       </footer>

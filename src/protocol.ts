@@ -56,6 +56,9 @@ export interface ChatMessage {
   /** Unix 毫秒 */
   ts: number;
   self: boolean;
+  system?: boolean;
+  /** 文件卡片消息（dir=in 有下载按钮，dir=out 只展示） */
+  file?: { fid: string; name: string; size: number; dir: 'in' | 'out' };
 }
 
 export interface Transfer {
@@ -101,7 +104,8 @@ export type PopupCommand =
   | { t: 'disconnect' }
   | { t: 'discover' }
   | { t: 'send-text'; text: string; to: string }
-  | { t: 'send-file'; file: OutgoingFile; to: string };
+  | { t: 'send-file'; file: OutgoingFile; to: string }
+  | { t: 'download-received'; fid: string };
 
 export type OffscreenMessage = { target: 'offscreen' } & PopupCommand;
 

@@ -25,6 +25,12 @@ const CHUNK = 16 * 1024;
 const MAX_BUFFER = 1 << 20; // 1 MiB 背压水位
 const MAX_MESSAGES = 200;
 const MAX_LOGS = 40;
+const MAX_RECEIVED = 20;
+
+interface ReceivedFile {
+  blob: Blob;
+  name: string;
+}
 const RECONNECT_MS = 3000;
 const DEFAULT_URL = 'ws://localhost:8787';
 
@@ -63,6 +69,9 @@ const state = {
   transfers: new Map<string, Transfer>(),
   logs: [] as LogEntry[],
 };
+
+/** 已接收但尚未下载的文件（blob 留在内存里等用户点击下载按钮） */
+const receivedFiles = new Map<string, ReceivedFile>();
 
 /** 诊断日志。连不上时这是唯一能看清卡在哪一步的东西，所以关键路径都要记。 */
 function log(text: string): void {
@@ -110,8 +119,8 @@ function pushState(): void {
   emit({ event: 'state', payload: snapshot() });
 }
 
-function addMessage(text: string, from: { id: string; name: string }, self: boolean): void {
-  const msg: ChatMessage = { id: crypto.randomUUID(), from: from.id, name: from.name, text, ts: Date.now(), self };
+function addMessage(text: string, from: { id: string; name: string }, self: boolean, system = false): void {
+  const msg: ChatMessage = { id: crypto.randomUUID(), from: from.id, name: from.name, text, ts: Date.now(), self, system };
   state.messages.push(msg);
   if (state.messages.length > MAX_MESSAGES) {
     state.messages.splice(0, state.messages.length - MAX_MESSAGES);
@@ -120,7 +129,22 @@ function addMessage(text: string, from: { id: string; name: string }, self: bool
 }
 
 function note(text: string): void {
-  addMessage(text, { id: selfId, name: state.selfName }, true);
+  addMessage(text, { id: selfId, name: state.selfName }, true, true);
+}
+
+function addFileMessage(from: { id: string; name: string }, fid: string, filename: string, size: number): void {
+  const msg: ChatMessage = {
+    id: crypto.randomUUID(),
+    from: from.id,
+    name: from.name,
+    text: filename,
+    ts: Date.now(),
+    self: false,
+    file: { fid, name: filename, size, dir: 'in' },
+  };
+  state.messages.push(msg);
+  if (state.messages.length > MAX_MESSAGES) state.messages.splice(0, state.messages.length - MAX_MESSAGES);
+  emit({ event: 'message', payload: msg });
 }
 
 function setStatus(status: Status, error = ''): void {
@@ -464,9 +488,11 @@ function finishIncoming(peer: Peer, fid: string): void {
   peer.incoming = null;
 
   const blob = new Blob(inc.chunks, { type: inc.mime });
-  void toSw({ target: 'sw', t: 'download', url: URL.createObjectURL(blob), filename: inc.name }).catch((e: unknown) =>
-    note(`⚠️ 保存 ${inc.name} 失败：${(e as Error).message}`)
-  );
+  receivedFiles.set(fid, { blob, name: inc.name });
+  if (receivedFiles.size > MAX_RECEIVED) {
+    const oldest = receivedFiles.keys().next().value;
+    if (oldest) receivedFiles.delete(oldest);
+  }
 
   const t = state.transfers.get(fid);
   if (t) {
@@ -474,7 +500,7 @@ function finishIncoming(peer: Peer, fid: string): void {
     t.done = true;
     emit({ event: 'transfer', payload: t });
   }
-  addMessage(`📎 已接收文件：${inc.name}（${formatBytes(blob.size)}）`, peer, false);
+  addFileMessage({ id: peer.id, name: peer.name }, fid, inc.name, blob.size);
 }
 
 /* ---------- 发送 ---------- */
@@ -532,10 +558,21 @@ async function sendFile(file: OutgoingFile, to: string): Promise<void> {
   for (const peer of list) {
     peer.queue = peer.queue
       .then(() => sendFileTo(peer, file, bytes))
-      .catch((e: unknown) => note(`⚠️ 发给 ${peer.name} 失败：${(e as Error).message}`));
+      .catch((e: unknown) => note(`发给 ${peer.name} 失败：${(e as Error).message}`));
   }
 
-  note(`📎 正在发送：${file.name}（${formatBytes(bytes.byteLength)}）→ ${list.length} 个对端`);
+  const outMsg: ChatMessage = {
+    id: crypto.randomUUID(),
+    from: selfId,
+    name: state.selfName,
+    text: file.name,
+    ts: Date.now(),
+    self: true,
+    file: { fid: crypto.randomUUID(), name: file.name, size: bytes.byteLength, dir: 'out' },
+  };
+  state.messages.push(outMsg);
+  if (state.messages.length > MAX_MESSAGES) state.messages.splice(0, state.messages.length - MAX_MESSAGES);
+  emit({ event: 'message', payload: outMsg });
 }
 
 function formatBytes(n: number): string {
@@ -570,6 +607,13 @@ async function runCommand(msg: OffscreenMessage): Promise<unknown> {
     case 'send-file':
       await sendFile(msg.file, msg.to);
       return { ok: true };
+    case 'download-received': {
+      const rf = receivedFiles.get(msg.fid);
+      if (!rf) throw new Error('文件已过期，请让对方重发');
+      await toSw({ target: 'sw', t: 'download', url: URL.createObjectURL(rf.blob), filename: rf.name });
+      receivedFiles.delete(msg.fid);
+      return { ok: true };
+    }
   }
 }
 
