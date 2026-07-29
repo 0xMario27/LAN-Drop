@@ -719,21 +719,13 @@ async function sendFileTo(peer: Peer, meta: { name: string; type: string }, byte
   const size = bytes.byteLength;
   securePost(peer, { t: 'file-meta', fid, name: meta.name, size, mime: meta.type });
 
-  const record: Transfer = { fid, name: meta.name, size, received: 0, dir: 'out', peer: peer.name, done: false };
-  state.transfers.set(fid, record);
-  pushState();
-
   for (let offset = 0; offset < size; offset += CHUNK) {
     if (ch.readyState !== 'open') throw new Error('连接已断开');
     if (ch.bufferedAmount > MAX_BUFFER) await untilLowBuffer(ch);
     secureSendChunk(peer, bytes.slice(offset, offset + CHUNK));
-    record.received = Math.min(offset + CHUNK, size);
-    emit({ event: 'transfer', payload: record });
   }
 
   securePost(peer, { t: 'file-end', fid });
-  record.done = true;
-  emit({ event: 'transfer', payload: record });
 }
 
 // popup 传来的是 blob URL —— 扩展消息只走 JSON 序列化，ArrayBuffer 传不过去。
