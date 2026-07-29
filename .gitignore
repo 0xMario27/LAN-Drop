@@ -1,7 +1,7 @@
 node_modules/
 .DS_Store
 
-# extension/ 下的静态资源是源码，JS 是 tsc 的产物
+# extension/ 下的静态资源是源码，JS 是 tsc/esbuild 的产物
 extension/*.js
 extension/*.js.map
 lan-drop-extension.zip

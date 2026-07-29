@@ -1,6 +1,6 @@
 {
   "name": "lan-drop",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "局域网匿名 P2P 聊天与文件传输的 Chrome 扩展 + 信令中转",

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "LAN Drop",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "匿名局域网 P2P 聊天与文件传输（WebRTC DataChannel，数据不经过服务器）",
   "minimum_chrome_version": "116",
   "permissions": ["offscreen", "storage", "downloads"],
