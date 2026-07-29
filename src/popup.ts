@@ -361,9 +361,18 @@ els.file.onchange = async () => {
 
 /* ---------- 启动 ---------- */
 
+function setVisible(visible: boolean): void {
+  void toOffscreen({ t: 'set-visible', visible }).catch(() => {});
+}
+
+document.addEventListener('visibilitychange', () => setVisible(!document.hidden));
+window.addEventListener('pageshow', () => setVisible(true));
+window.addEventListener('pagehide', () => setVisible(false));
+
 void (async () => {
   try {
     await chrome.runtime.sendMessage({ target: 'sw', t: 'ensure' });
+    setVisible(true);
     renderState(await toOffscreen<AppState>({ t: 'get-state' }));
   } catch (e) {
     showError(`初始化失败：${(e as Error).message}`);

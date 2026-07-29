@@ -16,16 +16,17 @@ export interface PeerInfo {
 }
 
 export type ClientFrame =
-  /** room 为 null 时由服务器按来源网段自动归组 */
   | { t: 'join'; room: string | null; id: string; name: string; pubkey: string }
-  | { t: 'signal'; to: string; data: SignalPayload };
+  | { t: 'signal'; to: string; data: SignalPayload }
+  | { t: 'ping' };
 
 export type ServerFrame =
   | { t: 'joined'; room: string; peers: PeerInfo[] }
   | { t: 'peer-join'; id: string; name: string; pubkey: string }
   | { t: 'peer-leave'; id: string }
   | { t: 'signal'; from: string; data: SignalPayload }
-  | { t: 'error'; message: string };
+  | { t: 'error'; message: string }
+  | { t: 'pong' };
 
 /* ---------- DataChannel（对端 ↔ 对端） ---------- */
 
@@ -118,7 +119,8 @@ export type PopupCommand =
   | { t: 'discover' }
   | { t: 'send-text'; text: string; to: string }
   | { t: 'send-file'; file: OutgoingFile; to: string }
-  | { t: 'download-received'; fid: string };
+  | { t: 'download-received'; fid: string }
+  | { t: 'set-visible'; visible: boolean };
 
 export type OffscreenMessage = { target: 'offscreen' } & PopupCommand;
 
@@ -135,6 +137,7 @@ export type SwMessage = { target: 'sw' } & (
   | { t: 'set-identity'; blob: string }
   | { t: 'get-trusted-peer'; peerId: string }
   | { t: 'set-trusted-peer'; peerId: string; pubkey: string; level: TrustLevel }
+  | { t: 'notify'; title: string }
 );
 
 /** 自动发现的实时进度；找到或扫完时 done 为 true。 */

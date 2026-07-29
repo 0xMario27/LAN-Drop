@@ -58,6 +58,7 @@ export function createSignalServer({ port = 8787 } = {}): WebSocketServer {
 
       if (frame.t === 'join') join(ws, session, frame, req);
       else if (frame.t === 'signal') relay(session, frame);
+      else if (frame.t === 'ping') send(ws, { t: 'pong' });
     });
 
     ws.on('close', () => {

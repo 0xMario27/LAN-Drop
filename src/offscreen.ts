@@ -99,6 +99,12 @@ function log(text: string): void {
 
 let ws: WebSocket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
+let pongTimer: ReturnType<typeof setTimeout> | undefined;
+let popupVisible = true;
+
+const HEARTBEAT_MS = 30000;
+const PONG_TIMEOUT_MS = 10000;
 
 /* ---------- 与 popup 通信 ---------- */
 
@@ -285,12 +291,33 @@ async function sha256hex(text: string): Promise<string> {
 
 /* ---------- 信令 ---------- */
 
+function startHeartbeat(): void {
+  stopHeartbeat();
+  heartbeatTimer = setInterval(() => {
+    if (ws?.readyState === WebSocket.OPEN) {
+      send({ t: 'ping' });
+      pongTimer = setTimeout(() => {
+        log('心跳超时，主动断开重连');
+        ws?.close();
+      }, PONG_TIMEOUT_MS);
+    }
+  }, HEARTBEAT_MS);
+}
+
+function stopHeartbeat(): void {
+  clearInterval(heartbeatTimer);
+  clearTimeout(pongTimer);
+  heartbeatTimer = undefined;
+  pongTimer = undefined;
+}
+
 function teardown(): void {
   for (const peer of state.peers.values()) peer.pc.close();
   state.peers.clear();
 }
 
 function closeSocket(): void {
+  stopHeartbeat();
   if (!ws) return;
   ws.onclose = null;
   ws.close();
@@ -319,7 +346,7 @@ async function connect(): Promise<void> {
 
   socket.onopen = () => {
     log('WebSocket 已握手，发送 join');
-    // 群组名本地哈希后再发，服务器看不到明文群名
+    startHeartbeat();
     const code = state.cfg.room.trim();
     void (code ? sha256hex(code) : Promise.resolve(null)).then((room) =>
       send({ t: 'join', room, id: selfId, name: state.selfName, pubkey: myIdentity ? toBase64(myIdentity.publicKey) : '' })
@@ -331,7 +358,11 @@ async function connect(): Promise<void> {
     try {
       frame = JSON.parse(e.data) as ServerFrame;
     } catch {
-      return; // 非法帧直接丢弃
+      return;
+    }
+    if (frame.t === 'pong') {
+      clearTimeout(pongTimer);
+      return;
     }
     void handleSignal(frame).catch((err: unknown) => console.warn('[LAN Drop] signal error', err));
   };
@@ -623,6 +654,9 @@ function onChannelFrame(peer: Peer, frame: ChannelFrame): void {
 
     case 'msg':
       addMessage(String(frame.text ?? '').slice(0, 4000), peer, false);
+      if (!popupVisible) {
+        void toSw({ target: 'sw', t: 'notify', title: `${peer.name} sent a message` }).catch(() => {});
+      }
       break;
 
     case 'file-meta':
@@ -794,6 +828,9 @@ async function runCommand(msg: OffscreenMessage): Promise<unknown> {
       receivedFiles.delete(msg.fid);
       return { ok: true };
     }
+    case 'set-visible':
+      popupVisible = msg.visible;
+      return { ok: true };
   }
 }
 
