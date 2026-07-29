@@ -1,0 +1,7 @@
+node_modules
+extension
+.git
+*.md
+tsconfig.json
+server/tsconfig.json
+server/*.test.ts

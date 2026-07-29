@@ -1,0 +1,26 @@
+{
+  "name": "lan-drop",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "局域网匿名 P2P 聊天与文件传输的 Chrome 扩展 + 信令中转",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "watch": "tsc -p tsconfig.json --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p server/tsconfig.json",
+    "start": "node server/signal.ts",
+    "test": "node --test server/*.test.ts src/*.test.ts"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.287",
+    "@types/node": "^22.10.0",
+    "@types/ws": "^8.5.13",
+    "typescript": "^5.7.2"
+  }
+}
