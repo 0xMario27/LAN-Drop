@@ -11,7 +11,6 @@
     "noImplicitOverride": true,
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
-
     "rootDir": "src",
     "outDir": "extension",
     "sourceMap": true,

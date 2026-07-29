@@ -8,7 +8,13 @@ DOCKER_NODE = docker run --rm -v "$(CURDIR)":/app -w /app \
 	-u $$(id -u):$$(id -g) -e HOME=/tmp -e npm_config_cache=/tmp/.npm $(NODE_IMAGE)
 
 # protocol.ts 是纯类型文件，编译产物是空壳，删掉
-BUILD_CMD = npm run build && rm -f extension/protocol.js extension/protocol.js.map
+# offscreen.ts 引了 @noble/*，Chrome 扩展不支持 bare specifier，用 esbuild 打成单文件
+BUILD_CMD = npm run build && rm -f extension/protocol.js extension/protocol.js.map \
+	extension/crypto-primitives.js extension/crypto-primitives.js.map \
+	extension/identity.js extension/identity.js.map \
+	extension/noise.js extension/noise.js.map \
+	extension/secure-channel.js extension/secure-channel.js.map \
+	&& npx esbuild src/offscreen.ts --bundle --format=esm --outfile=extension/offscreen.js --sourcemap
 
 .DEFAULT_GOAL := help
 .PHONY: help build watch typecheck test serve up down logs ip zip clean build-docker test-docker

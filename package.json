@@ -12,15 +12,19 @@
     "watch": "tsc -p tsconfig.json --watch",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p server/tsconfig.json",
     "start": "node server/signal.ts",
-    "test": "node --test server/*.test.ts src/*.test.ts"
+    "test": "node --loader ./test-loader.mjs --test server/*.test.ts src/*.test.ts"
   },
   "dependencies": {
+    "@noble/ciphers": "^2.2.0",
+    "@noble/curves": "^2.2.0",
+    "@noble/hashes": "^2.2.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.287",
     "@types/node": "^22.10.0",
     "@types/ws": "^8.5.13",
+    "esbuild": "^0.28.1",
     "typescript": "^5.7.2"
   }
 }
