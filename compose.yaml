@@ -1,0 +1,16 @@
+services:
+  signal:
+    build: .
+    image: lan-drop-signal
+    container_name: lan-drop-signal
+    restart: unless-stopped
+    environment:
+      PORT: 8787
+    ports:
+      - '8787:8787'
+    # Linux 上可改用宿主网络，让服务器看到真实来源 IP（"按网段自动分组"才准确）：
+    # 注释掉上面的 ports，改成 network_mode: host
+    #
+    # Docker Desktop（macOS / Windows）下所有客户端的来源 IP 都会是网关地址，
+    # 于是全都落进同一个默认房间 —— 对局域网工具来说这行为可以接受，
+    # 需要精确按网段隔离时请用 Linux + host 网络，或让大家填同一个群组码。
